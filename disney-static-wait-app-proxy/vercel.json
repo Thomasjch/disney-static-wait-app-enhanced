@@ -1,5 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/api/waits", "destination": "/api/waits.js" }
-  ]
-}
