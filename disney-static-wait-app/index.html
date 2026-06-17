@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Disney Toddler Wait Navigator</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root{--bg:#08111f;--card:#121c30;--card2:#17243d;--text:#f8fafc;--muted:#b9c5d8;--line:#283754;--accent:#7dd3fc;--good:#22c55e;--mid:#facc15;--bad:#ef4444;--purple:#c084fc}
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#08111f,#0f172a);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    header{position:sticky;top:0;z-index:1000;background:rgba(8,17,31,.96);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:10px 12px 8px;padding-top:calc(10px + env(safe-area-inset-top))}
+    h1{font-size:20px;margin:0 0 8px}.controls,.filters,.tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.filters{margin-top:8px}.tabs{margin-top:10px}
+    select,button,label.filter{border:1px solid #33415f;background:#101a2f;color:var(--text);border-radius:999px;padding:9px 10px;font-size:14px}button{cursor:pointer}button.active{background:var(--accent);color:#04111d;font-weight:800}.tab{flex:1;border-radius:12px}label.filter{display:flex;gap:6px;align-items:center}.small{color:var(--muted);font-size:12px}.notice{color:var(--muted);font-size:13px;margin:10px 0}
+    main{padding:12px;padding-bottom:calc(24px + env(safe-area-inset-bottom))}.panel{display:none}.panel.active{display:block}#map{height:62vh;border:1px solid var(--line);border-radius:18px;overflow:hidden}.leaflet-popup-content{color:#111}
+    .grid{display:grid;gap:10px}.card{background:linear-gradient(180deg,var(--card),#10192b);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:0 10px 24px rgba(0,0,0,.12)}.topcard{background:linear-gradient(135deg,#102744,#1b2441);border-color:#35537a}.row{display:flex;justify-content:space-between;gap:10px;align-items:center}.name{font-weight:800;font-size:16px}.meta{color:var(--muted);font-size:13px;margin-top:4px;line-height:1.35}.pill{border-radius:999px;padding:6px 9px;font-weight:900;color:#06111f;white-space:nowrap}.good{background:var(--good)}.mid{background:var(--mid)}.bad{background:var(--bad);color:white}.gray{background:#94a3b8}.purple{background:var(--purple)}
+    .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.badge{font-size:11px;color:#dbeafe;background:#223453;border:1px solid #38527a;border-radius:999px;padding:4px 7px}.score{font-size:12px;color:#d1fae5}.split{display:grid;grid-template-columns:1fr 1fr;gap:10px}.setting label{display:block;margin:8px 0;color:var(--muted)}input[type=range]{width:100%}a{color:var(--accent)}
+    @media(max-width:600px){#map{height:58vh}.split{grid-template-columns:1fr}.name{font-size:15px}select,button,label.filter{font-size:13px;padding:8px}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Disney Toddler Wait Navigator</h1>
+  <div class="controls">
+    <select id="parkSelect" aria-label="Park"></select>
+    <button id="refreshBtn">Refresh</button>
+    <button id="locBtn">Use my location</button>
+  </div>
+  <div class="filters">
+    <label class="filter"><input type="checkbox" id="toddlerOnly" checked> Toddler / 40 in</label>
+    <label class="filter"><input type="checkbox" id="indoorOnly"> Indoor</label>
+    <label class="filter"><input type="checkbox" id="charactersOnly"> Characters</label>
+    <label class="filter"><input type="checkbox" id="llOnly"> Lightning Lane</label>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="mapPanel">Map</button>
+    <button class="tab" data-tab="nextPanel">Best Next</button>
+    <button class="tab" data-tab="listPanel">List</button>
+    <button class="tab" data-tab="settingsPanel">Settings</button>
+  </div>
+</header>
+<main>
+  <div id="status" class="notice">Loading...</div>
+  <section id="mapPanel" class="panel active"><div id="map"></div></section>
+  <section id="nextPanel" class="panel"><div id="bestNext" class="grid"></div></section>
+  <section id="listPanel" class="panel"><div id="cards" class="grid"></div></section>
+  <section id="settingsPanel" class="panel">
+    <div class="grid">
+      <div class="card">
+        <h2>Smart scoring</h2>
+        <p class="meta">Lower score is better. The app combines live wait time, estimated walk time, toddler fit, indoor bonus, character bonus, and Lightning Lane value.</p>
+        <div class="split">
+          <div class="setting"><label>Wait weight: <span id="waitWeightLabel">1.0</span></label><input id="waitWeight" type="range" min="0.5" max="2" step="0.1" value="1"></div>
+          <div class="setting"><label>Walk weight: <span id="walkWeightLabel">1.0</span></label><input id="walkWeight" type="range" min="0.5" max="2" step="0.1" value="1"></div>
+        </div>
+        <p class="small">Auto refreshes every 60 seconds while open. Wait data powered by Queue-Times.com. Distance is a rough straight-line walking estimate, not official Disney routing.</p>
+      </div>
+      <div class="card"><h2>Tips</h2><p class="meta">Use “Best Next” when standing in the park. Use filters when your son needs AC, characters, or only rides around 40 inches and under.</p></div>
+    </div>
+  </section>
+</main>
+<script>
+const parks={
+ magic_kingdom:{name:'Magic Kingdom',queueTimesId:6,center:[28.4186,-81.5812],attractions:[
+  a('Peter Pan’s Flight',28.4202,-81.5812,0,true,true,false,true,'Fantasyland'),a('“it’s a small world”',28.4207,-81.5819,0,true,true,false,true,'Fantasyland'),a('The Many Adventures of Winnie the Pooh',28.4201,-81.5791,0,true,true,false,true,'Fantasyland'),a('Dumbo the Flying Elephant',28.4218,-81.5780,0,true,false,false,true,'Storybook Circus'),a('Under the Sea - Journey of The Little Mermaid',28.4228,-81.5796,0,true,true,false,true,'Fantasyland'),a('The Barnstormer',28.4227,-81.5772,35,true,false,false,true,'Storybook Circus'),a('Buzz Lightyear’s Space Ranger Spin',28.4193,-81.5790,0,true,true,false,true,'Tomorrowland'),a('Pirates of the Caribbean',28.4182,-81.5843,0,true,true,false,true,'Adventureland'),a('Haunted Mansion',28.4204,-81.5829,0,true,true,false,true,'Liberty Square'),a('Jungle Cruise',28.4187,-81.5837,0,true,false,false,true,'Adventureland'),a('Enchanted Tales with Belle',28.4213,-81.5802,0,true,true,true,false,'Fantasyland'),a('Meet Ariel at Her Grotto',28.4225,-81.5794,0,true,true,true,false,'Fantasyland'),a('Meet Mickey at Town Square Theater',28.4162,-81.5812,0,true,true,true,true,'Main Street'),a('Princess Fairytale Hall',28.4205,-81.5804,0,true,true,true,true,'Fantasyland'),a('Seven Dwarfs Mine Train',28.4209,-81.5798,38,true,false,false,true,'Fantasyland'),a('TRON Lightcycle / Run',28.4209,-81.5776,48,false,false,false,true,'Tomorrowland') ]},
+ epcot:{name:'EPCOT',queueTimesId:5,center:[28.3747,-81.5494],attractions:[
+  a('Frozen Ever After',28.3709,-81.5467,0,true,true,false,true,'Norway'),a('Remy’s Ratatouille Adventure',28.3681,-81.5520,0,true,true,false,true,'France'),a('The Seas with Nemo & Friends',28.3753,-81.5519,0,true,true,false,true,'World Nature'),a('Spaceship Earth',28.3752,-81.5494,0,true,true,false,true,'World Celebration'),a('Journey Into Imagination With Figment',28.3728,-81.5516,0,true,true,false,true,'World Celebration'),a('Living with the Land',28.3743,-81.5527,0,true,true,false,true,'World Nature'),a('Turtle Talk With Crush',28.3755,-81.5521,0,true,true,true,false,'World Nature'),a('Meet Disney Pals at EPCOT',28.3750,-81.5498,0,true,true,true,false,'World Celebration'),a('Soarin’ Around the World',28.3742,-81.5529,40,true,true,false,true,'World Nature'),a('Test Track',28.3768,-81.5478,40,true,false,false,true,'World Discovery'),a('Guardians of the Galaxy: Cosmic Rewind',28.3761,-81.5462,42,false,true,false,true,'World Discovery') ]},
+ hollywood_studios:{name:'Hollywood Studios',queueTimesId:7,center:[28.3575,-81.5583],attractions:[
+  a('Mickey & Minnie’s Runaway Railway',28.3573,-81.5586,0,true,true,false,true,'Hollywood Boulevard'),a('Toy Story Mania!',28.3567,-81.5620,0,true,true,false,true,'Toy Story Land'),a('Alien Swirling Saucers',28.3560,-81.5610,32,true,false,false,true,'Toy Story Land'),a('Disney Junior Play and Dance!',28.3590,-81.5587,0,true,true,true,false,'Animation Courtyard'),a('Meet Olaf at Celebrity Spotlight',28.3585,-81.5586,0,true,true,true,false,'Echo Lake'),a('Lightning McQueen’s Racing Academy',28.3582,-81.5609,0,true,true,false,false,'Sunset Boulevard'),a('Slinky Dog Dash',28.3564,-81.5615,38,true,false,false,true,'Toy Story Land'),a('Millennium Falcon: Smugglers Run',28.3547,-81.5607,38,true,true,false,true,'Galaxy’s Edge'),a('Star Wars: Rise of the Resistance',28.3542,-81.5609,40,true,true,false,true,'Galaxy’s Edge'),a('Tower of Terror',28.3595,-81.5603,40,true,true,false,true,'Sunset Boulevard') ]},
+ animal_kingdom:{name:'Animal Kingdom',queueTimesId:8,center:[28.3559,-81.5900],attractions:[
+  a('Kilimanjaro Safaris',28.3636,-81.5905,0,true,false,false,true,'Africa'),a('Na’vi River Journey',28.3558,-81.5927,0,true,true,false,true,'Pandora'),a('TriceraTop Spin',28.3573,-81.5875,0,true,false,false,false,'Dinoland U.S.A.'),a('The Boneyard',28.3576,-81.5878,0,true,false,false,false,'Dinoland U.S.A.'),a('Adventurers Outpost',28.3579,-81.5901,0,true,true,true,false,'Discovery Island'),a('Festival of the Lion King',28.3630,-81.5902,0,true,true,true,false,'Africa'),a('Finding Nemo: The Big Blue... and Beyond!',28.3588,-81.5878,0,true,true,false,false,'Dinoland U.S.A.'),a('Kali River Rapids',28.3588,-81.5899,38,true,false,false,true,'Asia'),a('DINOSAUR',28.3570,-81.5884,40,true,true,false,true,'Dinoland U.S.A.'),a('Expedition Everest',28.3597,-81.5864,44,false,false,false,true,'Asia'),a('Avatar Flight of Passage',28.3556,-81.5934,44,false,true,false,true,'Pandora') ]}
+};
+function a(name,lat,lng,height,toddler,indoor,character,ll,land){return{name,lat,lng,height,toddler,indoor,character,ll,land}}
+let selectedPark='magic_kingdom',waits={},rawOpen={},userLocation=null,map,markers=[],lastUpdated=null,autoTimer=null;
+const $=id=>document.getElementById(id), parkSelect=$('parkSelect'); Object.entries(parks).forEach(([k,p])=>{const o=document.createElement('option');o.value=k;o.textContent=p.name;parkSelect.appendChild(o)}); parkSelect.value=selectedPark;
+function norm(s){return s.toLowerCase().replace(/[’'“”]/g,'').replace(/[^a-z0-9]+/g,' ').trim()} function waitClass(w){return w==null?'gray':w<=15?'good':w<=35?'mid':'bad'}
+function getWait(name){const n=norm(name); if(waits[n]!==undefined)return waits[n]; const key=Object.keys(waits).find(k=>k.includes(n.slice(0,12))||n.includes(k.slice(0,12))); return key?waits[key]:null}
+function isOpen(name){const n=norm(name); if(rawOpen[n]!==undefined)return rawOpen[n]; const key=Object.keys(rawOpen).find(k=>k.includes(n.slice(0,12))||n.includes(k.slice(0,12))); return key?rawOpen[key]:true}
+function walkMin(at){if(!userLocation)return null; const R=6371000,rad=x=>x*Math.PI/180,dLat=rad(at.lat-userLocation.lat),dLng=rad(at.lng-userLocation.lng); const s=Math.sin(dLat/2)**2+Math.cos(rad(userLocation.lat))*Math.cos(rad(at.lat))*Math.sin(dLng/2)**2; const meters=2*R*Math.asin(Math.sqrt(s)); return Math.max(1,Math.round(meters/75*1.25))}
+function score(at){const w=getWait(at.name), walk=walkMin(at)||0, ww=+$('waitWeight').value, xw=+$('walkWeight').value; let s=(w==null?90:w)*ww+walk*xw; if(at.toddler)s-=8; if(at.indoor)s-=4; if(at.character)s-=3; if(at.ll&&w!=null&&w>25)s-=3; if(!isOpen(at.name))s+=500; return Math.round(s)}
+function filtered(){return parks[selectedPark].attractions.filter(at=>(!$('toddlerOnly').checked||at.toddler||at.height<=40)&&(!$('indoorOnly').checked||at.indoor)&&(!$('charactersOnly').checked||at.character)&&(!$('llOnly').checked||at.ll)).map(at=>({...at,wait:getWait(at.name),walk:walkMin(at),open:isOpen(at.name),score:score(at)})).sort((a,b)=>a.score-b.score)}
+async function fetchWaits(){waits={};rawOpen={};$('status').textContent='Loading live waits...';try{const id=parks[selectedPark].queueTimesId; const res=await fetch(`https://queue-times.com/parks/${id}/queue_times.json?ts=${Date.now()}`); if(!res.ok)throw new Error('wait API failed'); const data=await res.json(); (data.lands||[]).forEach(l=>(l.rides||[]).forEach(r=>{waits[norm(r.name)]=r.is_open?r.wait_time:null; rawOpen[norm(r.name)]=!!r.is_open})); lastUpdated=new Date(); $('status').textContent=`Live waits loaded for ${parks[selectedPark].name} at ${lastUpdated.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}. Auto refresh: 60 sec. Powered by Queue-Times.com.`}catch(e){$('status').textContent='Could not load live waits. Map and recommendations still work with unknown waits.'} render()}
+function initMap(){map=L.map('map').setView(parks[selectedPark].center,16); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap contributors | Powered by Queue-Times.com'}).addTo(map)}
+function markerColor(at){if(!at.open)return '#64748b'; if(at.character)return '#c084fc'; return at.wait==null?'#94a3b8':at.wait<=15?'#22c55e':at.wait<=35?'#facc15':'#ef4444'}
+function renderMap(){markers.forEach(m=>map.removeLayer(m));markers=[];map.setView(parks[selectedPark].center,16);filtered().forEach(at=>{const icon=L.divIcon({className:'',html:`<div style="background:${markerColor(at)};width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px #000"></div>`}); const m=L.marker([at.lat,at.lng],{icon}).addTo(map);m.bindPopup(`<strong>${at.name}</strong><br>${at.land}<br>Wait: ${at.open?(at.wait??'Unknown'):'Closed'} min<br>Walk: ${at.walk?at.walk+' min':'Use location'}<br>Score: ${at.score}<br>${at.indoor?'Indoor • ':''}${at.character?'Character • ':''}${at.ll?'Lightning Lane':''}`);markers.push(m)})}
+function badges(at){let b=[]; if(at.height===0)b.push('Any height'); else b.push(at.height+' in'); if(at.indoor)b.push('Indoor'); if(at.character)b.push('Character'); if(at.ll)b.push('LL'); if(at.toddler)b.push('Toddler fit'); return b.map(x=>`<span class="badge">${x}</span>`).join('')}
+function card(at,i,top=false){return `<div class="card ${top?'topcard':''}"><div class="row"><div><div class="name">${i+1}. ${at.name}</div><div class="meta">${at.land} • Walk: ${at.walk?at.walk+' min':'Use location'} • Smart score: ${at.score}</div><div class="badges">${badges(at)}</div></div><div class="pill ${at.open?waitClass(at.wait):'gray'}">${at.open?(at.wait??'?'):'Closed'} min</div></div>${top?`<p class="score">Best because it balances wait, walking distance, age fit, and your active filters.</p>`:''}</div>`}
+function renderList(){const arr=filtered();$('cards').innerHTML=arr.map((at,i)=>card(at,i,false)).join('')||'<div class="card">No attractions match those filters.</div>'; $('bestNext').innerHTML=arr.slice(0,5).map((at,i)=>card(at,i,i===0)).join('')||'<div class="card">No recommendation with those filters.</div>'}
+function render(){renderMap();renderList()}
+document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));btn.classList.add('active');$(btn.dataset.tab).classList.add('active');setTimeout(()=>map.invalidateSize(),120)}));
+parkSelect.addEventListener('change',()=>{selectedPark=parkSelect.value;fetchWaits()}); $('refreshBtn').addEventListener('click',fetchWaits); ['toddlerOnly','indoorOnly','charactersOnly','llOnly','waitWeight','walkWeight'].forEach(id=>$(id).addEventListener('input',()=>{if(id==='waitWeight')$('waitWeightLabel').textContent=$(id).value;if(id==='walkWeight')$('walkWeightLabel').textContent=$(id).value;render()}));
+$('locBtn').addEventListener('click',()=>navigator.geolocation.getCurrentPosition(p=>{userLocation={lat:p.coords.latitude,lng:p.coords.longitude};render()},()=>alert('Location permission was not allowed.')));
+initMap();fetchWaits();autoTimer=setInterval(fetchWaits,60000);
+</script>
+</body>
+</html>
